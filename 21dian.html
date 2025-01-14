@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>21点 - 在线游戏</title>
+    <link rel="stylesheet" href="common.css">
+    <style>
+    
+
+    </style>
+</head>
+<body>
+    <div id="container" class="active">
+        <h1>21点在线游戏</h1>
+        <button id="create-room-button">创建房间</button>
+        <button id="join-room-button">加入房间</button>
+        <div>
+            <label for="nickname">修改昵称：</label>
+            <input type="text" id="nickname" placeholder="输入昵称">
+            <button id="update-nickname-button">确认</button>
+        </div>
+    </div>
+
+   
+
+    <script>
+        // 页面元素
+        const homeContainer = document.getElementById('home-container');
+        const gameContainer = document.getElementById('game-container');
+        const createRoomButton = document.getElementById('create-room-button');
+        const joinRoomButton = document.getElementById('join-room-button');
+        const nicknameInput = document.getElementById('nickname');
+        const updateNicknameButton = document.getElementById('update-nickname-button');
+        const hitButton = document.getElementById('hit-button');
+        const standButton = document.getElementById('stand-button');
+        const statusDiv = document.getElementById('status');
+        const chatMessages = document.getElementById('chat-messages');
+        const messageInput = document.getElementById('message');
+        const sendButton = document.getElementById('send-button');
+        const otherPlayersDiv = document.getElementById('other-players');
+
+        // 显示昵称
+        let nickname = '玩家';
+
+        function updateNickname() {
+            const newNickname = nicknameInput.value.trim();
+            if (newNickname) {
+                nickname = newNickname;
+                alert(`昵称修改为：${nickname}`);
+            }
+        }
+
+        updateNicknameButton.addEventListener('click', updateNickname);
+
+        // 切换到游戏房间页面
+        function enterGameRoom() {
+            //跳转到21game.html
+            document.location.href = '21game.html';
+        }
+
+        createRoomButton.addEventListener('click', () => {
+            // 模拟创建房间逻辑
+            enterGameRoom();
+            statusDiv.textContent = '已创建房间，等待其他玩家加入...';
+        });
+
+        joinRoomButton.addEventListener('click', () => {
+            // 模拟加入房间逻辑
+            enterGameRoom();
+            statusDiv.textContent = '已加入房间，等待开始游戏...';
+        });
+
+        // 模拟游戏操作
+        hitButton.addEventListener('click', () => {
+            alert(`${nickname} 要了一张牌！`);
+        });
+
+        standButton.addEventListener('click', () => {
+            alert(`${nickname} 停牌！`);
+        });
+
+        sendButton.addEventListener('click', () => {
+            const message = messageInput.value.trim();
+            if (message) {
+                const msgDiv = document.createElement('div');
+                msgDiv.textContent = `${nickname}: ${message}`;
+                chatMessages.appendChild(msgDiv);
+                messageInput.value = '';
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        });
+    </script>
+</body>
+</html>

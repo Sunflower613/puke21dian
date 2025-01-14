@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="common.css">
+    <link rel="stylesheet" href="puke_sprites.css">
+</head>
+<body>
+    <header>
+        <button id="exit-button" class="gray" onclick="exit()">退出</button>
+        <p class="room-id">房间ID: <span id="room-id">{25535}</span></p></header>
+    <div id="container">
+        
+        <h1>21点游戏房间</h1>
+        <div id="players">
+            <div class="player">{xiao}的牌: {3}张 {?} 分 <span class="status">等待中</span>
+            <div class="cards">
+                <div class="card pk-heart8"></div>
+                <div class="card pk-hide"></div>
+                <div class="card pk-hide"></div>
+            </div></div>
+            <div class="player">{yang}的牌: {2}张 {?} 分 <span class="status">等待中</span>
+            <div class="cards">
+                <div class="card pk-spadeK"></div>
+                <div class="card pk-hide"></div>
+            </div></div>
+            <div class="player" id="player-self">我的牌: {5}张 {19} 分 <span class="status">操作中</span>
+            <div id="cards">
+                <div class="card pk-spadeA"></div>
+                <div class="card pk-heart3"></div>
+                <div class="card pk-diamondA"></div>
+                <div class="card pk-club4"></div>
+                <div class="card pk-spadeK"></div>
+            </div></div>
+        </div>
+       
+        <div>
+            <button id="hit-button">要牌</button>
+            <button id="stand-button">停牌</button>
+        </div>
+        <div id="status">等待其他玩家...</div>
+        <div id="chat-container">
+            <h3>聊天</h3>
+            <div id="chat-messages"></div>
+            <div id="chat-input">
+                <input type="text" id="message" placeholder="输入消息">
+                <button id="send-button">发送</button>
+            </div>
+        </div>
+    </div>
+    <script src="21game.js"></script>
+    <script>
+        function exit() {
+            document.location.href = '21dian.html';
+        }
+        let status = [{value: "等待中", color: "gray"},
+         {value: "操作中", color: "yellow"}, 
+         {value: "已停牌", color: "green"}, 
+         {value: "已爆牌", color: "red"}];
+    </script>
+</body>
+</html>
