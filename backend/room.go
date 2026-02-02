@@ -46,6 +46,11 @@ func (r *Room) AddPlayer(player *Player) bool {
 		return false
 	}
 
+	// 游戏开始后不允许新玩家加入
+	if r.Status == GamePlaying {
+		return false
+	}
+
 	if len(r.Players) >= 6 { // 最多6个玩家
 		return false
 	}

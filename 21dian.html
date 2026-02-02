@@ -6,88 +6,258 @@
     <title>21点 - 在线游戏</title>
     <link rel="stylesheet" href="common.css">
     <style>
-    
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
 
+        #container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+
+        input[type="text"] {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            width: 200px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 12px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 5px;
+            font-weight: bold;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary, #create-room-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled), #create-room-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary, #join-room-button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled), #join-room-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4);
+        }
+
+        #confirm-join-button {
+            background: #4CAF50;
+            color: white;
+        }
+
+        #cancel-join-button {
+            background: #f44336;
+            color: white;
+        }
+
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 8px;
+            background: #f5f5f5;
+            min-height: 20px;
+            font-size: 14px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #666;
+            font-weight: bold;
+        }
+
+        #join-room-input {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 10px;
+        }
     </style>
 </head>
 <body>
     <div id="container" class="active">
         <h1>21点在线游戏</h1>
-        <button id="create-room-button">创建房间</button>
-        <button id="join-room-button">加入房间</button>
-        <div>
-            <label for="nickname">修改昵称：</label>
-            <input type="text" id="nickname" placeholder="输入昵称">
-            <button id="update-nickname-button">确认</button>
+        <div style="margin-bottom: 20px;">
+            <label for="nickname">昵称：</label>
+            <input type="text" id="nickname" placeholder="输入昵称" value="玩家">
         </div>
+        <button id="create-room-button" class="btn-primary">创建房间</button>
+        <button id="join-room-button" class="btn-secondary">加入房间</button>
+        <div id="join-room-input" style="display: none; margin-top: 20px;">
+            <label for="room-id">房间ID：</label>
+            <input type="text" id="room-id" placeholder="输入房间ID">
+            <button id="confirm-join-button">确认加入</button>
+            <button id="cancel-join-button">取消</button>
+        </div>
+        <div id="status" style="margin-top: 20px; color: #666;"></div>
     </div>
 
    
 
     <script>
         // 页面元素
-        const homeContainer = document.getElementById('home-container');
-        const gameContainer = document.getElementById('game-container');
         const createRoomButton = document.getElementById('create-room-button');
         const joinRoomButton = document.getElementById('join-room-button');
         const nicknameInput = document.getElementById('nickname');
-        const updateNicknameButton = document.getElementById('update-nickname-button');
-        const hitButton = document.getElementById('hit-button');
-        const standButton = document.getElementById('stand-button');
         const statusDiv = document.getElementById('status');
-        const chatMessages = document.getElementById('chat-messages');
-        const messageInput = document.getElementById('message');
-        const sendButton = document.getElementById('send-button');
-        const otherPlayersDiv = document.getElementById('other-players');
+        const joinRoomInput = document.getElementById('join-room-input');
+        const roomIdInput = document.getElementById('room-id');
+        const confirmJoinButton = document.getElementById('confirm-join-button');
+        const cancelJoinButton = document.getElementById('cancel-join-button');
 
-        // 显示昵称
-        let nickname = '玩家';
+        // 创建房间
+        async function createRoom() {
+            const nickname = nicknameInput.value.trim();
+            if (!nickname) {
+                alert('请输入昵称！');
+                return;
+            }
 
-        function updateNickname() {
-            const newNickname = nicknameInput.value.trim();
-            if (newNickname) {
-                nickname = newNickname;
-                alert(`昵称修改为：${nickname}`);
+            try {
+                statusDiv.textContent = '正在创建房间...';
+                createRoomButton.disabled = true;
+                
+                const response = await fetch('/api/room/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('创建房间失败');
+                }
+
+                const data = await response.json();
+                const roomId = data.roomId;
+                
+                statusDiv.textContent = `房间创建成功！房间ID: ${roomId}`;
+                
+                // 跳转到游戏页面
+                setTimeout(() => {
+                    window.location.href = `21game.html?roomId=${roomId}&nickname=${encodeURIComponent(nickname)}`;
+                }, 1000);
+
+            } catch (error) {
+                console.error('创建房间错误:', error);
+                statusDiv.textContent = '创建房间失败: ' + error.message;
+                createRoomButton.disabled = false;
             }
         }
 
-        updateNicknameButton.addEventListener('click', updateNickname);
-
-        // 切换到游戏房间页面
-        function enterGameRoom() {
-            //跳转到21game.html
-            document.location.href = '21game.html';
+        // 显示加入房间输入框
+        function showJoinRoomInput() {
+            joinRoomInput.style.display = 'block';
+            joinRoomButton.style.display = 'none';
+            createRoomButton.style.display = 'none';
         }
 
-        createRoomButton.addEventListener('click', () => {
-            // 模拟创建房间逻辑
-            enterGameRoom();
-            statusDiv.textContent = '已创建房间，等待其他玩家加入...';
-        });
+        // 隐藏加入房间输入框
+        function hideJoinRoomInput() {
+            joinRoomInput.style.display = 'none';
+            joinRoomButton.style.display = 'inline-block';
+            createRoomButton.style.display = 'inline-block';
+            roomIdInput.value = '';
+        }
 
-        joinRoomButton.addEventListener('click', () => {
-            // 模拟加入房间逻辑
-            enterGameRoom();
-            statusDiv.textContent = '已加入房间，等待开始游戏...';
-        });
+        // 确认加入房间
+        async function confirmJoinRoom() {
+            const nickname = nicknameInput.value.trim();
+            const roomId = roomIdInput.value.trim();
+            
+            if (!nickname) {
+                alert('请输入昵称！');
+                return;
+            }
+            
+            if (!roomId) {
+                alert('请输入房间ID！');
+                return;
+            }
 
-        // 模拟游戏操作
-        hitButton.addEventListener('click', () => {
-            alert(`${nickname} 要了一张牌！`);
-        });
+            try {
+                statusDiv.textContent = '正在加入房间...';
+                confirmJoinButton.disabled = true;
+                
+                // 验证房间是否存在
+                const response = await fetch(`/api/room/${roomId}`);
+                
+                if (!response.ok) {
+                    throw new Error('房间不存在');
+                }
 
-        standButton.addEventListener('click', () => {
-            alert(`${nickname} 停牌！`);
-        });
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                statusDiv.textContent = `正在加入房间 ${roomId}...`;
+                
+                // 跳转到游戏页面
+                setTimeout(() => {
+                    window.location.href = `21game.html?roomId=${roomId}&nickname=${encodeURIComponent(nickname)}`;
+                }, 500);
 
-        sendButton.addEventListener('click', () => {
-            const message = messageInput.value.trim();
-            if (message) {
-                const msgDiv = document.createElement('div');
-                msgDiv.textContent = `${nickname}: ${message}`;
-                chatMessages.appendChild(msgDiv);
-                messageInput.value = '';
-                chatMessages.scrollTop = chatMessages.scrollHeight;
+            } catch (error) {
+                console.error('加入房间错误:', error);
+                statusDiv.textContent = '加入房间失败: ' + error.message;
+                confirmJoinButton.disabled = false;
+            }
+        }
+
+        // 事件监听
+        createRoomButton.addEventListener('click', createRoom);
+        joinRoomButton.addEventListener('click', showJoinRoomInput);
+        confirmJoinButton.addEventListener('click', confirmJoinRoom);
+        cancelJoinButton.addEventListener('click', hideJoinRoomInput);
+
+        // 回车键快捷操作
+        roomIdInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                confirmJoinRoom();
             }
         });
     </script>

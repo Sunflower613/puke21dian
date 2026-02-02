@@ -19,7 +19,12 @@ func init() {
 
 func main() {
 	// 设置静态文件服务
-	fs := http.FileServer(http.Dir("../"))
+	// 自动检测静态文件目录（支持从backend或backend/build运行）
+	staticDir := "../"
+	if _, err := os.Stat("../../21dian.html"); err == nil {
+		staticDir = "../../"
+	}
+	fs := http.FileServer(http.Dir(staticDir))
 
 	// 创建房间API
 	http.HandleFunc("/api/room/create", handleCreateRoom)
@@ -48,7 +53,7 @@ func main() {
 	fmt.Printf("🎰 21点游戏服务器启动\n")
 	fmt.Printf("🌐 HTTP服务地址: http://localhost:%s\n", port)
 	fmt.Printf("🔌 WebSocket地址: ws://localhost:%s/ws\n", port)
-	fmt.Printf("📁 静态文件目录: ../\n\n")
+	fmt.Printf("📁 静态文件目录: %s\n\n", staticDir)
 
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatalf("服务器启动失败: %v", err)

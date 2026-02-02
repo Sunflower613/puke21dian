@@ -3,19 +3,34 @@
 class BlackjackGame {
     constructor() {
         this.ws = null;
-        this.playerId = null;
+        this.playerId = this.getOrCreatePlayerId(); // 获取或生成唯一玩家ID
         this.nickname = '玩家' + Math.floor(Math.random() * 1000);
         this.roomId = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
+        this.isHost = false; // 是否是房主
+        this.gameStarted = false; // 游戏是否已开始
 
         this.init();
     }
 
+    // 获取或创建唯一的玩家ID（使用sessionStorage，刷新页面会保留，关闭标签页会清除）
+    getOrCreatePlayerId() {
+        let playerId = sessionStorage.getItem('blackjack_player_id');
+        if (!playerId) {
+            const timestamp = Date.now();
+            const random = Math.floor(Math.random() * 1000000);
+            playerId = `player_${timestamp}_${random}`;
+            sessionStorage.setItem('blackjack_player_id', playerId);
+        }
+        return playerId;
+    }
+
     init() {
-        // 从URL获取房间ID
+        // 从URL获取房间ID和昵称
         const urlParams = new URLSearchParams(window.location.search);
         this.roomId = urlParams.get('roomId');
+        const urlNickname = urlParams.get('nickname');
 
         if (!this.roomId) {
             alert('房间ID不存在');
@@ -23,24 +38,30 @@ class BlackjackGame {
             return;
         }
 
+        // 设置昵称（优先使用URL参数）
+        if (urlNickname) {
+            this.nickname = decodeURIComponent(urlNickname);
+        }
+
         // 更新房间显示
-        document.getElementById('room-id').textContent = `{${this.roomId}}`;
+        document.getElementById('room-id').textContent = this.roomId;
 
         // 绑定按钮事件
         document.getElementById('hit-button').addEventListener('click', () => this.hit());
         document.getElementById('stand-button').addEventListener('click', () => this.stand());
         document.getElementById('send-button').addEventListener('click', () => this.sendMessage());
+        document.getElementById('start-game-button').addEventListener('click', () => this.startGame());
         document.getElementById('message').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendMessage();
         });
 
         // 连接WebSocket
         this.connect();
+    }
 
-        // 请求开始游戏
-        setTimeout(() => {
-            this.send({ type: 'start', data: { roomId: this.roomId, playerId: this.playerId } });
-        }, 1000);
+    startGame() {
+        // 发送开始游戏请求
+        this.send({ type: 'start', data: { roomId: this.roomId, playerId: this.playerId } });
     }
 
     connect() {
@@ -107,14 +128,27 @@ class BlackjackGame {
             case 'join':
                 console.log('✅ 已加入房间');
                 this.updateStatus('等待游戏开始...', 'gray');
+                // 显示等待区域
+                this.showWaitingArea();
                 break;
 
             case 'roomInfo':
                 console.log('🏠 房间信息:', message.data);
+                // 如果游戏已经开始，提示用户
+                if (message.data.status === 1) { // GamePlaying
+                    alert('游戏已经开始，无法加入！');
+                    window.location.href = '21dian.html';
+                }
                 break;
 
             case 'players':
-                this.updatePlayers(message.data.players);
+                if (this.gameStarted) {
+                    // 游戏中更新玩家信息
+                    this.updatePlayers(message.data.players);
+                } else {
+                    // 等待中更新玩家列表
+                    this.updateWaitingPlayers(message.data.players);
+                }
                 break;
 
             case 'update':
@@ -127,8 +161,13 @@ class BlackjackGame {
 
             case 'start':
                 console.log('🎮 游戏开始');
+                this.gameStarted = true;
                 this.updateStatus('游戏进行中', 'yellow');
                 this.enableButtons(true);
+                // 隐藏等待区域，显示游戏区域
+                document.getElementById('waiting-area').style.display = 'none';
+                document.getElementById('players').style.display = 'block';
+                document.getElementById('game-actions').style.display = 'block';
                 break;
 
             case 'gameEnd':
@@ -253,6 +292,47 @@ class BlackjackGame {
 
         hitButton.style.opacity = enabled ? '1' : '0.5';
         standButton.style.opacity = enabled ? '1' : '0.5';
+    }
+
+    showWaitingArea() {
+        document.getElementById('waiting-area').style.display = 'block';
+        document.getElementById('players').style.display = 'none';
+        document.getElementById('game-actions').style.display = 'none';
+    }
+
+    updateWaitingPlayers(players) {
+        const playerListDiv = document.getElementById('player-list');
+        const playerCountSpan = document.getElementById('player-count');
+        const startButton = document.getElementById('start-game-button');
+
+        // 更新玩家数量
+        playerCountSpan.textContent = players.length;
+
+        // 判断是否是房主（第一个玩家）
+        if (players.length > 0 && players[0].id === this.playerId) {
+            this.isHost = true;
+            startButton.style.display = 'block';
+        } else {
+            this.isHost = false;
+            startButton.style.display = 'none';
+        }
+
+        // 更新玩家列表
+        playerListDiv.innerHTML = '<h3>房间玩家：</h3>';
+        players.forEach((player, index) => {
+            const playerItem = document.createElement('div');
+            playerItem.style.margin = '10px 0';
+            playerItem.style.padding = '8px';
+            playerItem.style.background = player.id === this.playerId ? '#3498db' : '#95a5a6';
+            playerItem.style.color = 'white';
+            playerItem.style.borderRadius = '5px';
+            
+            const hostBadge = index === 0 ? '👑 ' : '';
+            const youBadge = player.id === this.playerId ? '（你）' : '';
+            
+            playerItem.textContent = `${hostBadge}${player.nickname}${youBadge}`;
+            playerListDiv.appendChild(playerItem);
+        });
     }
 }
 

@@ -3,18 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>21点游戏房间</title>
     <link rel="stylesheet" href="common.css">
     <link rel="stylesheet" href="puke_sprites.css">
+    <style>
+        #waiting-area {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        #waiting-area h2 {
+            color: #3498db;
+            margin-bottom: 20px;
+        }
+        
+        #player-list {
+            margin: 20px auto;
+            max-width: 400px;
+        }
+        
+        #start-game-button {
+            background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+            font-size: 18px;
+            padding: 15px 40px;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+        
+        #start-game-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(46, 204, 113, 0.4);
+        }
+        
+        #player-count {
+            color: #3498db;
+            font-weight: bold;
+            font-size: 20px;
+        }
+    </style>
 </head>
 <body>
     <header>
         <button id="exit-button" class="gray" onclick="exit()">退出</button>
-        <p class="room-id">房间ID: <span id="room-id">{25535}</span></p></header>
+        <p class="room-id">房间ID: <span id="room-id">加载中...</span></p>
+    </header>
     <div id="container">
         
         <h1>21点游戏房间</h1>
-        <div id="players">
+        
+        <!-- 等待区域 -->
+        <div id="waiting-area">
+            <h2>等待玩家加入...</h2>
+            <p>当前玩家：<span id="player-count">0</span>/6</p>
+            <div id="player-list"></div>
+            <button id="start-game-button">开始游戏</button>
+        </div>
+        
+        <div id="players" style="display: none;">
             <div class="player">{xiao}的牌: {3}张 {?} 分 <span class="status">等待中</span>
             <div class="cards">
                 <div class="card pk-heart8"></div>
@@ -36,7 +81,7 @@
             </div></div>
         </div>
        
-        <div>
+        <div id="game-actions" style="display: none;">
             <button id="hit-button">要牌</button>
             <button id="stand-button">停牌</button>
         </div>

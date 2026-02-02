@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"sync"
 
@@ -307,6 +308,38 @@ func (rm *RoomManager) handleJoin(wsConn *WebSocketConn, msg Message) {
 		return
 	}
 
+	// 获取房间
+	room := rm.GetRoom(data.RoomID)
+	if room == nil {
+		wsConn.Send(Message{
+			Type:  TypeError,
+			Error: "房间不存在",
+		})
+		return
+	}
+
+	// 检查玩家是否已经在房间中
+	existingPlayer := room.GetPlayer(data.PlayerID)
+	if existingPlayer != nil {
+		// 玩家已存在，更新连接（处理刷新页面的情况）
+		existingPlayer.Conn = wsConn
+		existingPlayer.Nickname = data.Nickname
+		
+		// 发送房间信息
+		wsConn.Send(Message{
+			Type: TypeRoomInfo,
+			Data: toJSON(map[string]interface{}{
+				"roomId": room.ID,
+				"status": room.Status,
+			}),
+		})
+
+		// 广播玩家列表更新
+		rm.broadcastPlayers(room, data.PlayerID)
+		return
+	}
+
+	// 玩家不存在，尝试加入房间
 	room, err := rm.JoinRoom(data.RoomID, data.PlayerID, data.Nickname)
 	if err != nil {
 		wsConn.Send(Message{

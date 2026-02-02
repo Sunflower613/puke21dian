@@ -1,0 +1,15 @@
+[Unit]
+Description=21点游戏服务器
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+WorkingDirectory=/opt/blackjack
+Environment="PORT=8080"
+ExecStart=/opt/blackjack/blackjack-linux-amd64
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
