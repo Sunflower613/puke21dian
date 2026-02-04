@@ -23,6 +23,7 @@ class BlackjackGame {
             playerId = `player_${timestamp}_${random}`;
             sessionStorage.setItem('blackjack_player_id', playerId);
         }
+        console.log('playerId', playerId);
         return playerId;
     }
 
@@ -213,9 +214,12 @@ class BlackjackGame {
             playerDiv.id = isSelf ? 'player-self' : `player-${player.id}`;
 
             const cardsHtml = player.cards.map(card => `<div class="card ${card}"></div>`).join('');
+            
+            // 自己始终显示真实点数，其他玩家如果在操作中则隐藏点数
+            const displayValue = isSelf || player.status !== '操作中' ? player.handValue : '?';
 
             playerDiv.innerHTML = `
-                ${player.nickname}的牌: {${player.cardCount}}张 ${player.status === '操作中' ? '?' : player.handValue} 分
+                ${isSelf ? '我' : player.nickname}的牌: {${player.cardCount}}张 ${displayValue} 分
                 <span class="status" style="color: ${player.statusColor}">${player.status}</span>
                 <div class="cards">${cardsHtml}</div>
             `;
@@ -229,10 +233,11 @@ class BlackjackGame {
         if (playerDiv) {
             const cardsHtml = player.cards.map(card => `<div class="card ${card}"></div>`).join('');
             const isSelf = player.id === this.playerId;
+            console.log('isSelf', isSelf);
             const displayValue = isSelf || player.status !== '操作中' ? player.handValue : '?';
 
             playerDiv.innerHTML = `
-                ${player.nickname}的牌: {${player.cardCount}}张 ${displayValue} 分
+                ${isSelf ? '我' : player.nickname}的牌: {${player.cardCount}}张 ${displayValue} 分
                 <span class="status" style="color: ${player.statusColor}">${player.status}</span>
                 <div class="cards">${cardsHtml}</div>
             `;
@@ -241,6 +246,16 @@ class BlackjackGame {
             if (isSelf && player.status === '爆牌') {
                 this.enableButtons(false);
             }
+        }
+    }
+    updatePlayerSelf(player) {
+        const playerDiv = document.getElementById('player-self');
+        if (playerDiv) {
+            const cardsHtml = player.cards.map(card => `<div class="card ${card}"></div>`).join('');
+            playerDiv.innerHTML = `
+                我的牌: {${player.cardCount}}张 ${player.handValue} 分
+                <div class="cards">${cardsHtml}</div>
+            `;
         }
     }
 
@@ -307,6 +322,11 @@ class BlackjackGame {
 
         // 更新玩家数量
         playerCountSpan.textContent = players.length;
+        if (players.length >= 2) {
+            startButton.disabled = false;
+        } else {
+            startButton.disabled = true;
+        }
 
         // 判断是否是房主（第一个玩家）
         if (players.length > 0 && players[0].id === this.playerId) {

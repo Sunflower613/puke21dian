@@ -51,7 +51,7 @@ func main() {
 	}
 
 	fmt.Printf("🎰 21点游戏服务器启动\n")
-	fmt.Printf("🌐 HTTP服务地址: http://localhost:%s\n", port)
+	fmt.Printf("🌐 HTTP服务地址: http://localhost:%s/21dian.html\n", port)
 	fmt.Printf("🔌 WebSocket地址: ws://localhost:%s/ws\n", port)
 	fmt.Printf("📁 静态文件目录: %s\n\n", staticDir)
 

@@ -1,5 +1,5 @@
 🎰 21点游戏服务器启动
-🌐 HTTP服务地址: http://localhost:8080
+🌐 HTTP服务地址: http://localhost:8080/21dian.html
 🔌 WebSocket地址: ws://localhost:8080/ws
 📁 静态文件目录: ../../
 
