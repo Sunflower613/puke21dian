@@ -20,6 +20,7 @@ type Player struct {
 	Status     PlayerStatus  `json:"status"`
 	HandValue  int           `json:"handValue"`
 	RoomID     string        `json:"roomId"`
+	IsBot      bool          `json:"isBot"`
 	Conn       *WebSocketConn `json:"-"` // WebSocket连接
 	LastActive time.Time     `json:"lastActive"`
 }
@@ -91,13 +92,15 @@ func (p *Player) GetStatusColor() string {
 	}
 }
 
-// CanAct 检查是否可以操作
+// CanAct 检查是否可以操作（哪怕21点也需手动停牌）
 func (p *Player) CanAct() bool {
-	return p.Status == StatusActing && p.HandValue < 21
+	return p.Status == StatusActing && p.HandValue <= 21
 }
 
 // ToMap 转换为Map（用于JSON序列化）
-func (p *Player) ToMap(hideCards bool) map[string]interface{} {
+// hideCards: 隐藏手牌（只露第一张）
+// maskStatus: 隐藏真实状态（爆牌显示为停牌，隐藏分数）
+func (p *Player) ToMap(hideCards bool, maskStatus bool) map[string]interface{} {
 	cards := make([]string, 0, len(p.Cards))
 	for _, card := range p.Cards {
 		cards = append(cards, card.String())
@@ -111,13 +114,29 @@ func (p *Player) ToMap(hideCards bool) map[string]interface{} {
 		}
 	}
 
+	status := p.GetStatusString()
+	statusColor := p.GetStatusColor()
+	handValue := p.HandValue
+
+	// 对其他玩家隐藏真实状态：爆牌伪装为停牌，停牌/爆牌隐藏分数
+	if maskStatus {
+		if p.Status == StatusBust {
+			status = "已停牌"
+			statusColor = "green"
+		}
+		if p.Status == StatusStood || p.Status == StatusBust {
+			handValue = 0
+		}
+	}
+
 	return map[string]interface{}{
-		"id":         p.ID,
-		"nickname":   p.Nickname,
-		"cards":      cards,
-		"cardCount":  len(p.Cards),
-		"handValue":  p.HandValue,
-		"status":     p.GetStatusString(),
-		"statusColor": p.GetStatusColor(),
+		"id":          p.ID,
+		"nickname":    p.Nickname,
+		"cards":       cards,
+		"cardCount":   len(p.Cards),
+		"handValue":   handValue,
+		"status":      status,
+		"statusColor": statusColor,
+		"isBot":       p.IsBot,
 	}
 }

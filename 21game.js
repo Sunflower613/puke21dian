@@ -3,18 +3,19 @@
 class BlackjackGame {
     constructor() {
         this.ws = null;
-        this.playerId = this.getOrCreatePlayerId(); // 获取或生成唯一玩家ID
+        this.playerId = this.getOrCreatePlayerId();
         this.nickname = '玩家' + Math.floor(Math.random() * 1000);
         this.roomId = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
-        this.isHost = false; // 是否是房主
-        this.gameStarted = false; // 游戏是否已开始
+        this.isHost = false;
+        this.gameStarted = false;
+        this.prevCardCounts = {}; // 记录每个玩家上次的牌数，用于只给新牌加动画
 
         this.init();
     }
 
-    // 获取或创建唯一的玩家ID（使用sessionStorage，刷新页面会保留，关闭标签页会清除）
+    // 获取或创建唯一的玩家ID
     getOrCreatePlayerId() {
         let playerId = sessionStorage.getItem('blackjack_player_id');
         if (!playerId) {
@@ -39,7 +40,7 @@ class BlackjackGame {
             return;
         }
 
-        // 设置昵称（优先使用URL参数）
+        // 设置昵称
         if (urlNickname) {
             this.nickname = decodeURIComponent(urlNickname);
         }
@@ -52,6 +53,7 @@ class BlackjackGame {
         document.getElementById('stand-button').addEventListener('click', () => this.stand());
         document.getElementById('send-button').addEventListener('click', () => this.sendMessage());
         document.getElementById('start-game-button').addEventListener('click', () => this.startGame());
+        document.getElementById('add-bot-button').addEventListener('click', () => this.addBot());
         document.getElementById('message').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendMessage();
         });
@@ -61,8 +63,11 @@ class BlackjackGame {
     }
 
     startGame() {
-        // 发送开始游戏请求
         this.send({ type: 'start', data: { roomId: this.roomId, playerId: this.playerId } });
+    }
+
+    addBot() {
+        this.send({ type: 'addBot', data: { roomId: this.roomId, playerId: this.playerId } });
     }
 
     connect() {
@@ -129,25 +134,31 @@ class BlackjackGame {
             case 'join':
                 console.log('✅ 已加入房间');
                 this.updateStatus('等待游戏开始...', 'gray');
-                // 显示等待区域
                 this.showWaitingArea();
                 break;
 
             case 'roomInfo':
                 console.log('🏠 房间信息:', message.data);
-                // 如果游戏已经开始，提示用户
-                if (message.data.status === 1) { // GamePlaying
+                if (message.data.error) {
+                    alert(message.data.error);
+                    window.location.href = '21dian.html';
+                } else if (message.data.status === 1 && !message.data.isExisting) {
                     alert('游戏已经开始，无法加入！');
                     window.location.href = '21dian.html';
+                } else if (message.data.status === 1 && message.data.isExisting) {
+                    console.log('🔄 重连成功，恢复游戏状态');
+                    this.gameStarted = true;
+                    this.updateStatus('游戏进行中', 'yellow');
+                    document.getElementById('waiting-area').style.display = 'none';
+                    document.getElementById('players').style.display = '';
+                    document.getElementById('game-actions').style.display = 'flex';
                 }
                 break;
 
             case 'players':
                 if (this.gameStarted) {
-                    // 游戏中更新玩家信息
                     this.updatePlayers(message.data.players);
                 } else {
-                    // 等待中更新玩家列表
                     this.updateWaitingPlayers(message.data.players);
                 }
                 break;
@@ -167,8 +178,8 @@ class BlackjackGame {
                 this.enableButtons(true);
                 // 隐藏等待区域，显示游戏区域
                 document.getElementById('waiting-area').style.display = 'none';
-                document.getElementById('players').style.display = 'block';
-                document.getElementById('game-actions').style.display = 'block';
+                document.getElementById('players').style.display = '';
+                document.getElementById('game-actions').style.display = 'flex';
                 break;
 
             case 'gameEnd':
@@ -177,7 +188,16 @@ class BlackjackGame {
 
             case 'error':
                 console.error('❌ 错误:', message.error);
-                alert('错误: ' + message.error);
+                const errMsg = message.error || '';
+                // 房间不存在时返回主页
+                if (errMsg.includes('房间不存在') || errMsg.includes('不存在') || errMsg.includes('not found')) {
+                    alert(errMsg);
+                    window.location.href = '21dian.html';
+                } else if (typeof showToast === 'function') {
+                    showToast('错误: ' + errMsg);
+                } else {
+                    alert('错误: ' + errMsg);
+                }
                 break;
 
             default:
@@ -187,10 +207,12 @@ class BlackjackGame {
 
     hit() {
         this.send({ type: 'hit', data: { roomId: this.roomId, playerId: this.playerId } });
+        this.enableButtons(false);
     }
 
     stand() {
         this.send({ type: 'stand', data: { roomId: this.roomId, playerId: this.playerId } });
+        this.enableButtons(false);
     }
 
     sendMessage() {
@@ -203,99 +225,214 @@ class BlackjackGame {
         }
     }
 
+    // ===== 获取状态样式 =====
+    getStatusClass(status) {
+        const map = {
+            '等待中': 'status-waiting',
+            '操作中': 'status-acting',
+            '已停牌': 'status-stood',
+            '已爆牌': 'status-bust',
+            '爆牌': 'status-bust',
+        };
+        return map[status] || 'status-waiting';
+    }
+
+    getStatusColor(status) {
+        const map = {
+            '等待中': '#94a3b8',
+            '操作中': '#f59e0b',
+            '已停牌': '#10b981',
+            '已爆牌': '#ef4444',
+            '爆牌': '#ef4444',
+        };
+        return map[status] || '#94a3b8';
+    }
+
+    // ===== 更新游戏中的玩家列表 =====
     updatePlayers(players) {
         const playersDiv = document.getElementById('players');
         playersDiv.innerHTML = '';
 
-        players.forEach(player => {
+        players.forEach((player, idx) => {
             const isSelf = player.id === this.playerId;
             const playerDiv = document.createElement('div');
             playerDiv.className = 'player' + (isSelf ? ' player-self' : '');
             playerDiv.id = isSelf ? 'player-self' : `player-${player.id}`;
+            playerDiv.style.animationDelay = `${idx * 0.05}s`;
 
-            const cardsHtml = player.cards.map(card => `<div class="card ${card}"></div>`).join('');
-            
-            // 自己始终显示真实点数，其他玩家如果在操作中则隐藏点数
-            const displayValue = isSelf || player.status !== '操作中' ? player.handValue : '?';
+            const prevCount = this.prevCardCounts[player.id] || 0;
+            const cardsHtml = player.cards.map((card, ci) => {
+                const isNew = ci >= prevCount;
+                const animStyle = isNew ? 'animation-delay:' + ((ci - prevCount) * 0.08) + 's' : 'animation:none';
+                return `<div class="card-wrapper" style="z-index: ${ci + 1};"><div class="card ${card}" style="${animStyle}"></div></div>`;
+            }).join('');
+            this.prevCardCounts[player.id] = player.cards.length;
+
+            // 显示点数逻辑：自己始终显示，其他人操作中或分数被隐藏(0)时显示?
+            const displayValue = isSelf ? player.handValue : (player.status === '操作中' || player.handValue === 0 ? '?' : player.handValue);
+            const statusClass = this.getStatusClass(player.status);
+            const nameLabel = isSelf ? '我' : player.nickname;
+            const botBadge = player.isBot ? '<span class="badge badge-bot">🤖</span>' : '';
 
             playerDiv.innerHTML = `
-                ${isSelf ? '我' : player.nickname}的牌: {${player.cardCount}}张 ${displayValue} 分
-                <span class="status" style="color: ${player.statusColor}">${player.status}</span>
+                <div class="player-header">
+                    <div class="player-name-section">
+                        <span class="player-name-text">${nameLabel}</span>
+                        ${isSelf ? '<span class="badge badge-you">YOU</span>' : ''}${botBadge}
+                    </div>
+                    <div class="player-meta">
+                        <span class="card-count">${player.cardCount}张</span>
+                        <span class="score-badge">${displayValue}</span>
+                        <span class="status ${statusClass}">${player.status}</span>
+                    </div>
+                </div>
                 <div class="cards">${cardsHtml}</div>
             `;
+
+            if (isSelf) {
+                if (player.status === '操作中') {
+                    this.enableButtons(true);
+                } else {
+                    this.enableButtons(false);
+                }
+            }
 
             playersDiv.appendChild(playerDiv);
         });
     }
 
+    // ===== 更新单个玩家 =====
     updatePlayer(player) {
         const playerDiv = document.getElementById(`player-${player.id}`) || document.getElementById('player-self');
         if (playerDiv) {
-            const cardsHtml = player.cards.map(card => `<div class="card ${card}"></div>`).join('');
+            const prevCount = this.prevCardCounts[player.id] || 0;
+            const cardsHtml = player.cards.map((card, ci) => {
+                const isNew = ci >= prevCount;
+                const animStyle = isNew ? 'animation-delay:' + ((ci - prevCount) * 0.08) + 's' : 'animation:none';
+                return `<div class="card-wrapper" style="z-index: ${ci + 1};"><div class="card ${card}" style="${animStyle}"></div></div>`;
+            }).join('');
+            this.prevCardCounts[player.id] = player.cards.length;
             const isSelf = player.id === this.playerId;
-            console.log('isSelf', isSelf);
-            const displayValue = isSelf || player.status !== '操作中' ? player.handValue : '?';
+            const displayValue = isSelf ? player.handValue : (player.status === '操作中' || player.handValue === 0 ? '?' : player.handValue);
+            const statusClass = this.getStatusClass(player.status);
+            const nameLabel = isSelf ? '我' : player.nickname;
+            const botBadge = player.isBot ? '<span class="badge badge-bot">🤖</span>' : '';
 
             playerDiv.innerHTML = `
-                ${isSelf ? '我' : player.nickname}的牌: {${player.cardCount}}张 ${displayValue} 分
-                <span class="status" style="color: ${player.statusColor}">${player.status}</span>
+                <div class="player-header">
+                    <div class="player-name-section">
+                        <span class="player-name-text">${nameLabel}</span>
+                        ${isSelf ? '<span class="badge badge-you">YOU</span>' : ''}${botBadge}
+                    </div>
+                    <div class="player-meta">
+                        <span class="card-count">${player.cardCount}张</span>
+                        <span class="score-badge">${displayValue}</span>
+                        <span class="status ${statusClass}">${player.status}</span>
+                    </div>
+                </div>
                 <div class="cards">${cardsHtml}</div>
             `;
 
-            // 如果是自己爆牌了，禁用按钮
-            if (isSelf && player.status === '爆牌') {
-                this.enableButtons(false);
+            // 如果是自己，根据状态启用/禁用操作按钮
+            if (isSelf) {
+                if (player.status === '操作中') {
+                    this.enableButtons(true);
+                } else {
+                    this.enableButtons(false);
+                }
             }
         }
     }
+
     updatePlayerSelf(player) {
         const playerDiv = document.getElementById('player-self');
         if (playerDiv) {
-            const cardsHtml = player.cards.map(card => `<div class="card ${card}"></div>`).join('');
+            const cardsHtml = player.cards.map((card, ci) =>
+                `<div class="card-wrapper" style="z-index: ${ci + 1};"><div class="card ${card}" style="animation-delay:${ci * 0.08}s"></div></div>`
+            ).join('');
             playerDiv.innerHTML = `
-                我的牌: {${player.cardCount}}张 ${player.handValue} 分
+                <div class="player-header">
+                    <div class="player-name-section">
+                        <span class="player-name-text">我</span>
+                        <span class="badge badge-you">YOU</span>
+                    </div>
+                    <div class="player-meta">
+                        <span class="card-count">${player.cardCount}张</span>
+                        <span class="score-badge">${player.handValue}</span>
+                    </div>
+                </div>
                 <div class="cards">${cardsHtml}</div>
             `;
         }
     }
 
+    // ===== 游戏结束 =====
     handleGameEnd(data) {
         console.log('🏁 游戏结束:', data);
 
         // 禁用按钮
         this.enableButtons(false);
 
-        // 显示结果
-        let resultHtml = '<div style="margin-top: 20px; padding: 15px; background: #34495e; border-radius: 5px;">';
+        // 构建结果面板
+        let resultHtml = '<div class="result-panel">';
         resultHtml += '<h3>🏆 游戏结果</h3>';
 
         data.results.forEach(result => {
-            const statusClass = result.isWinner ? 'green' : (result.status === '已爆牌' ? 'red' : 'gray');
-            const winnerIcon = result.isWinner ? '👑 ' : '';
-            resultHtml += `<div style="margin: 10px 0; color: ${statusClass};">
-                ${winnerIcon}${result.nickname}: ${result.score}分 (${result.status})
-            </div>`;
+            const isWinner = result.isWinner;
+            const statusColor = result.status === '已爆牌' ? 'var(--danger)' : (isWinner ? 'var(--gold-light)' : 'var(--text-secondary)');
+            const winnerIcon = isWinner ? '👑 ' : '';
+            const itemClass = isWinner ? 'result-item winner' : 'result-item';
+
+            resultHtml += `
+                <div class="${itemClass}">
+                    <span>${winnerIcon}${result.nickname}</span>
+                    <span>
+                        <span class="result-score" style="color: ${statusColor}">${result.score}分</span>
+                        <span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 6px">${result.status}</span>
+                    </span>
+                </div>`;
         });
 
         resultHtml += '</div>';
 
+        // 如果是房主，增加"重新开始"按钮
+        if (this.isHost) {
+            resultHtml += '<div style="text-align:center; margin-top: 16px;"><button id="restart-game-button" class="btn-success btn-lg btn-block">🔄 再来一局</button></div>';
+        }
+
         const statusDiv = document.getElementById('status');
         statusDiv.innerHTML = resultHtml;
+
+        // 绑定重新开始按钮
+        if (this.isHost) {
+            const restartBtn = document.getElementById('restart-game-button');
+            if (restartBtn) {
+                restartBtn.addEventListener('click', () => this.startGame());
+            }
+        }
     }
 
+    // ===== 聊天 =====
     addChatMessage(data) {
         const chatMessages = document.getElementById('chat-messages');
         const msgDiv = document.createElement('div');
-        msgDiv.style.margin = '5px 0';
-        msgDiv.textContent = `${data.nickname}: ${data.message}`;
+        msgDiv.className = 'chat-msg';
+        msgDiv.innerHTML = `<strong>${data.nickname}:</strong> ${data.message}`;
         chatMessages.appendChild(msgDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
+    // ===== 状态更新 =====
     updateStatus(text, color) {
         const statusDiv = document.getElementById('status');
         statusDiv.textContent = text;
-        statusDiv.style.color = color === 'green' ? '#2ecc71' : (color === 'red' ? '#e74c3c' : (color === 'yellow' ? '#f1c40f' : '#ecf0f1'));
+        const colorMap = {
+            'green': 'var(--success)',
+            'red': 'var(--danger)',
+            'yellow': 'var(--warning)',
+            'gray': 'var(--text-secondary)',
+        };
+        statusDiv.style.color = colorMap[color] || 'var(--text)';
     }
 
     enableButtons(enabled) {
@@ -305,16 +442,17 @@ class BlackjackGame {
         if (hitButton) hitButton.disabled = !enabled;
         if (standButton) standButton.disabled = !enabled;
 
-        hitButton.style.opacity = enabled ? '1' : '0.5';
-        standButton.style.opacity = enabled ? '1' : '0.5';
+        if (hitButton) hitButton.style.opacity = enabled ? '1' : '0.4';
+        if (standButton) standButton.style.opacity = enabled ? '1' : '0.4';
     }
 
     showWaitingArea() {
-        document.getElementById('waiting-area').style.display = 'block';
+        document.getElementById('waiting-area').style.display = 'flex';
         document.getElementById('players').style.display = 'none';
         document.getElementById('game-actions').style.display = 'none';
     }
 
+    // ===== 等待区玩家列表 =====
     updateWaitingPlayers(players) {
         const playerListDiv = document.getElementById('player-list');
         const playerCountSpan = document.getElementById('player-count');
@@ -322,36 +460,40 @@ class BlackjackGame {
 
         // 更新玩家数量
         playerCountSpan.textContent = players.length;
-        if (players.length >= 2) {
-            startButton.disabled = false;
-        } else {
-            startButton.disabled = true;
-        }
+        startButton.disabled = players.length < 2;
 
-        // 判断是否是房主（第一个玩家）
+        // 判断是否是房主
+        const addBotButton = document.getElementById('add-bot-button');
         if (players.length > 0 && players[0].id === this.playerId) {
             this.isHost = true;
-            startButton.style.display = 'block';
+            startButton.style.display = 'inline-flex';
+            addBotButton.style.display = players.length < 6 ? 'inline-flex' : 'none';
         } else {
             this.isHost = false;
             startButton.style.display = 'none';
+            addBotButton.style.display = 'none';
         }
 
-        // 更新玩家列表
-        playerListDiv.innerHTML = '<h3>房间玩家：</h3>';
+        // 构建玩家列表
+        playerListDiv.innerHTML = '<h3>房间玩家</h3>';
         players.forEach((player, index) => {
-            const playerItem = document.createElement('div');
-            playerItem.style.margin = '10px 0';
-            playerItem.style.padding = '8px';
-            playerItem.style.background = player.id === this.playerId ? '#3498db' : '#95a5a6';
-            playerItem.style.color = 'white';
-            playerItem.style.borderRadius = '5px';
-            
-            const hostBadge = index === 0 ? '👑 ' : '';
-            const youBadge = player.id === this.playerId ? '（你）' : '';
-            
-            playerItem.textContent = `${hostBadge}${player.nickname}${youBadge}`;
-            playerListDiv.appendChild(playerItem);
+            const isSelf = player.id === this.playerId;
+            const isHost = index === 0;
+
+            const item = document.createElement('div');
+            item.className = 'waiting-player-item' + (isSelf ? ' is-self' : '');
+
+            let badges = '';
+            if (isHost) badges += '<span class="badge badge-host">👑 房主</span>';
+            if (player.isBot) badges += '<span class="badge badge-bot">🤖 人机</span>';
+            if (isSelf) badges += '<span class="badge badge-you">你</span>';
+
+            item.innerHTML = `
+                <span class="waiting-player-name">${player.nickname}</span>
+                <div class="waiting-player-badges">${badges}</div>
+            `;
+
+            playerListDiv.appendChild(item);
         });
     }
 }

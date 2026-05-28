@@ -19,6 +19,8 @@ const (
 type Room struct {
 	ID          string                   `json:"id"`
 	Players     map[string]*Player       `json:"players"`
+	PlayerIDs   []string                 `json:"playerIds"`
+	HostID      string                   `json:"hostId"`
 	Status      GameStatus               `json:"status"`
 	Deck        *Deck                    `json:"-"`
 	CurrentTurn int                      `json:"currentTurn"`
@@ -31,6 +33,7 @@ func NewRoom(id string) *Room {
 	return &Room{
 		ID:        id,
 		Players:   make(map[string]*Player),
+		PlayerIDs: make([]string, 0),
 		Status:    GameWaiting,
 		Deck:      nil,
 		CreatedAt: time.Now(),
@@ -57,6 +60,10 @@ func (r *Room) AddPlayer(player *Player) bool {
 
 	player.RoomID = r.ID
 	r.Players[player.ID] = player
+	r.PlayerIDs = append(r.PlayerIDs, player.ID)
+	if len(r.Players) == 1 {
+		r.HostID = player.ID
+	}
 	return true
 }
 
@@ -66,6 +73,19 @@ func (r *Room) RemovePlayer(playerID string) {
 	defer r.Lock.Unlock()
 
 	delete(r.Players, playerID)
+
+	// 从 PlayerIDs 中移除
+	for i, id := range r.PlayerIDs {
+		if id == playerID {
+			r.PlayerIDs = append(r.PlayerIDs[:i], r.PlayerIDs[i+1:]...)
+			break
+		}
+	}
+
+	// 如果移出的是房主，转交给剩下的第一个人
+	if r.HostID == playerID && len(r.PlayerIDs) > 0 {
+		r.HostID = r.PlayerIDs[0]
+	}
 
 	// 如果房间空了，可以标记为待删除
 	if len(r.Players) == 0 {
@@ -107,11 +127,6 @@ func (r *Room) StartGame() error {
 	for _, player := range r.Players {
 		player.AddCard(r.Deck.Deal())
 		player.AddCard(r.Deck.Deal())
-
-		// 检查是否直接21点
-		if IsBlackjack(player.Cards) {
-			player.Status = StatusStood
-		}
 	}
 
 	r.Status = GamePlaying
@@ -210,10 +225,13 @@ func (r *Room) GetPlayersList(excludeID string) []map[string]interface{} {
 	defer r.Lock.RUnlock()
 
 	players := make([]map[string]interface{}, 0)
-	for _, player := range r.Players {
-		// 为其他玩家隐藏牌
-		hideCards := (player.ID != excludeID)
-		players = append(players, player.ToMap(hideCards))
+	for _, id := range r.PlayerIDs {
+		if player, exists := r.Players[id]; exists {
+			// 为其他玩家隐藏牌和状态
+			isOther := (player.ID != excludeID)
+			maskStatus := isOther && (r.Status != GameEnded)
+			players = append(players, player.ToMap(isOther, maskStatus))
+		}
 	}
 
 	return players

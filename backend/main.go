@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -18,12 +19,28 @@ func init() {
 }
 
 func main() {
-	// 设置静态文件服务
-	// 自动检测静态文件目录（支持从backend或backend/build运行）
-	staticDir := "../"
-	if _, err := os.Stat("../../21dian.html"); err == nil {
-		staticDir = "../../"
+	// 自动检测静态文件目录（优先根据可执行文件相对路径向上查找，避免 CWD 目录不正确导致的文件错乱）
+	staticDir := "../../" // 默认退路
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		candidates := []string{
+			exeDir,
+			filepath.Join(exeDir, ".."),
+			filepath.Join(exeDir, "../.."),
+		}
+		for _, c := range candidates {
+			if _, err := os.Stat(filepath.Join(c, "index.html")); err == nil {
+				staticDir = c
+				break
+			}
+		}
 	}
+
+	// 转换为绝对路径，确保静态资源加载稳定
+	if absDir, err := filepath.Abs(staticDir); err == nil {
+		staticDir = absDir
+	}
+
 	fs := http.FileServer(http.Dir(staticDir))
 
 	// 创建房间API
@@ -41,6 +58,21 @@ func main() {
 			return
 		}
 
+		// 禁用静态文件浏览器缓存，防止开发调试时静态资源被强缓存
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+
+		path := r.URL.Path
+		if path == "/room" || path == "/room/" {
+			// Ensure staticDir has correct slash prefix/suffix
+			filePath := staticDir + "/room.html"
+			if _, err := os.Stat(filePath); err == nil {
+				http.ServeFile(w, r, filePath)
+				return
+			}
+		}
+
 		// 其他请求提供静态文件
 		fs.ServeHTTP(w, r)
 	})
@@ -51,7 +83,7 @@ func main() {
 	}
 
 	fmt.Printf("🎰 21点游戏服务器启动\n")
-	fmt.Printf("🌐 HTTP服务地址: http://localhost:%s/21dian.html\n", port)
+	fmt.Printf("🌐 HTTP服务地址: http://localhost:%s/\n", port)
 	fmt.Printf("🔌 WebSocket地址: ws://localhost:%s/ws\n", port)
 	fmt.Printf("📁 静态文件目录: %s\n\n", staticDir)
 
@@ -106,8 +138,12 @@ func handleRoomAPI(w http.ResponseWriter, r *http.Request) {
 		})
 
 	case http.MethodDelete:
-		// 离开房间
-		playerID := r.URL.Query().Get("playerId")
+		// 离开房间 (支持 Auth Header: X-Player-Id)
+		playerID := r.Header.Get("X-Player-Id")
+		if playerID == "" {
+			playerID = r.URL.Query().Get("playerId")
+		}
+
 		if playerID == "" {
 			json.NewEncoder(w).Encode(map[string]string{
 				"error": "玩家ID不能为空",

@@ -69,6 +69,8 @@ func (c *Card) String() string {
 	switch c.Rank {
 	case Ace:
 		rankStr = "A"
+	case Ten:
+		rankStr = "10"
 	case Jack:
 		rankStr = "J"
 	case Queen:
@@ -131,10 +133,12 @@ func CalculateHandValue(cards []Card) int {
 	aces := 0
 
 	for _, card := range cards {
-		total += card.Value()
+		val := card.Value()
 		if card.Rank == Ace {
+			val = 11
 			aces++
 		}
+		total += val
 	}
 
 	// 如果总点数超过21且有A，将A从11分变成1分

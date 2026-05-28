@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -35,6 +36,7 @@ const (
 	TypeRoomInfo   MessageType = "roomInfo"
 	TypePlayers    MessageType = "players"
 	TypeGameEnd    MessageType = "gameEnd"
+	TypeAddBot     MessageType = "addBot"
 )
 
 // Message WebSocket消息
@@ -74,7 +76,7 @@ func (wsc *WebSocketConn) Send(msg Message) {
 	case wsc.send <- msg:
 	default:
 		// 发送缓冲区满，关闭连接
-		wsc.Close()
+		wsc.close()
 	}
 }
 
@@ -82,7 +84,11 @@ func (wsc *WebSocketConn) Send(msg Message) {
 func (wsc *WebSocketConn) Close() {
 	wsc.mu.Lock()
 	defer wsc.mu.Unlock()
+	wsc.close()
+}
 
+// close 私有关闭连接（无锁版本，避免死锁）
+func (wsc *WebSocketConn) close() {
 	if wsc.closed {
 		return
 	}
@@ -232,6 +238,53 @@ func (rm *RoomManager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	wsConn.ReadPump(func(msg Message) {
 		rm.handleMessage(wsConn, msg)
 	})
+
+	// 连接断开后，扫描并清理对应的玩家
+	rm.mu.Lock()
+	var disconnectedPlayer *Player
+	for _, p := range rm.players {
+		if p.Conn == wsConn {
+			disconnectedPlayer = p
+			break
+		}
+	}
+	rm.mu.Unlock()
+
+	if disconnectedPlayer != nil {
+		rm.handlePlayerDisconnect(disconnectedPlayer)
+	}
+}
+
+// handlePlayerDisconnect 处理玩家断开连接（延迟清理以支持重连）
+func (rm *RoomManager) handlePlayerDisconnect(player *Player) {
+	roomID := player.RoomID
+	playerID := player.ID
+
+	go func() {
+		time.Sleep(3 * time.Second) // 延迟 3 秒以允许刷新重连
+		rm.mu.Lock()
+		defer rm.mu.Unlock()
+
+		p, exists := rm.players[playerID]
+		if !exists {
+			return
+		}
+		// 如果 p.Conn 为空，或者连接已被标记为关闭，说明在此期间没有连回
+		if p.Conn == nil || p.Conn.IsClosed() {
+			room, roomExists := rm.rooms[roomID]
+			if roomExists {
+				room.RemovePlayer(playerID)
+				delete(rm.players, playerID)
+
+				if room.PlayerCount() > 0 {
+					// 重新发送玩家列表给房间内的其他人
+					rm.sendPlayersList(room)
+				} else {
+					delete(rm.rooms, roomID)
+				}
+			}
+		}
+	}()
 }
 
 // handleMessage 处理收到的消息
@@ -249,6 +302,8 @@ func (rm *RoomManager) handleMessage(wsConn *WebSocketConn, msg Message) {
 		rm.handleStand(wsConn, msg)
 	case TypeChat:
 		rm.handleChat(wsConn, msg)
+	case TypeAddBot:
+		rm.handleAddBot(wsConn, msg)
 	default:
 		wsConn.Send(Message{
 			Type:  TypeError,
@@ -329,13 +384,14 @@ func (rm *RoomManager) handleJoin(wsConn *WebSocketConn, msg Message) {
 		wsConn.Send(Message{
 			Type: TypeRoomInfo,
 			Data: toJSON(map[string]interface{}{
-				"roomId": room.ID,
-				"status": room.Status,
+				"roomId":     room.ID,
+				"status":     room.Status,
+				"isExisting": true,
 			}),
 		})
 
 		// 广播玩家列表更新
-		rm.broadcastPlayers(room, data.PlayerID)
+		rm.sendPlayersList(room)
 		return
 	}
 
@@ -362,7 +418,7 @@ func (rm *RoomManager) handleJoin(wsConn *WebSocketConn, msg Message) {
 	})
 
 	// 广播玩家列表更新
-	rm.broadcastPlayers(room, data.PlayerID)
+	rm.sendPlayersList(room)
 }
 
 // handleStart 处理开始游戏
@@ -397,7 +453,10 @@ func (rm *RoomManager) handleStart(wsConn *WebSocketConn, msg Message) {
 		}),
 	})
 
-	rm.broadcastPlayers(room, data.PlayerID)
+	rm.sendPlayersList(room)
+
+	// 如果有人机玩家，启动人机自动操作
+	rm.botPlay(room)
 }
 
 // handleHit 处理要牌
@@ -424,17 +483,11 @@ func (rm *RoomManager) handleHit(wsConn *WebSocketConn, msg Message) {
 		return
 	}
 
-	player := room.GetPlayer(data.PlayerID)
-	room.Broadcast(Message{
-		Type: TypeUpdate,
-		Data: toJSON(player.ToMap(false)),
-	})
-
 	// 检查游戏是否结束
 	if room.CheckGameEnd() {
 		rm.handleGameEnd(room)
 	} else {
-		rm.broadcastPlayers(room, data.PlayerID)
+		rm.sendPlayersList(room)
 	}
 }
 
@@ -462,17 +515,11 @@ func (rm *RoomManager) handleStand(wsConn *WebSocketConn, msg Message) {
 		return
 	}
 
-	player := room.GetPlayer(data.PlayerID)
-	room.Broadcast(Message{
-		Type: TypeUpdate,
-		Data: toJSON(player.ToMap(false)),
-	})
-
 	// 检查游戏是否结束
 	if room.CheckGameEnd() {
 		rm.handleGameEnd(room)
 	} else {
-		rm.broadcastPlayers(room, data.PlayerID)
+		rm.sendPlayersList(room)
 	}
 }
 
@@ -511,29 +558,144 @@ func (rm *RoomManager) handleChat(wsConn *WebSocketConn, msg Message) {
 	})
 }
 
+// handleAddBot 处理添加人机
+func (rm *RoomManager) handleAddBot(wsConn *WebSocketConn, msg Message) {
+	var data struct {
+		RoomID   string `json:"roomId"`
+		PlayerID string `json:"playerId"`
+	}
+
+	if err := json.Unmarshal(msg.Data, &data); err != nil {
+		return
+	}
+
+	room := rm.GetRoom(data.RoomID)
+	if room == nil {
+		wsConn.Send(Message{Type: TypeError, Error: "房间不存在"})
+		return
+	}
+
+	if room.Status != GameWaiting {
+		wsConn.Send(Message{Type: TypeError, Error: "游戏已开始，无法添加人机"})
+		return
+	}
+
+	// 统计已有人机数量
+	room.Lock.RLock()
+	botCount := 0
+	for _, p := range room.Players {
+		if p.IsBot {
+			botCount++
+		}
+	}
+	room.Lock.RUnlock()
+
+	botNum := botCount + 1
+	botID := fmt.Sprintf("bot_%s_%d_%d", data.RoomID, botNum, time.Now().UnixNano())
+	botName := fmt.Sprintf("机器人%d", botNum)
+
+	bot := NewPlayer(botID, botName)
+	bot.IsBot = true
+
+	if !room.AddPlayer(bot) {
+		wsConn.Send(Message{Type: TypeError, Error: "无法添加人机（房间已满）"})
+		return
+	}
+
+	rm.mu.Lock()
+	rm.players[botID] = bot
+	rm.mu.Unlock()
+
+	// 广播更新的玩家列表
+	rm.sendPlayersList(room)
+}
+
+// botPlay 人机自动操作（经典策略：<17要牌，>=17停牌）
+func (rm *RoomManager) botPlay(room *Room) {
+	// 检查是否有人机
+	room.Lock.RLock()
+	hasBot := false
+	for _, p := range room.Players {
+		if p.IsBot {
+			hasBot = true
+			break
+		}
+	}
+	room.Lock.RUnlock()
+
+	if !hasBot {
+		return
+	}
+
+	go func() {
+		time.Sleep(1500 * time.Millisecond) // 等待前端 UI 更新
+
+		for {
+			// 查找还能操作的人机
+			room.Lock.RLock()
+			if room.Status != GamePlaying {
+				room.Lock.RUnlock()
+				return
+			}
+			var botID string
+			var shouldHit bool
+			for _, id := range room.PlayerIDs {
+				p := room.Players[id]
+				if p != nil && p.IsBot && p.Status == StatusActing {
+					botID = p.ID
+					shouldHit = p.HandValue < 17
+					break
+				}
+			}
+			room.Lock.RUnlock()
+
+			if botID == "" {
+				return // 所有人机操作完毕
+			}
+
+			// 执行人机决策
+			if shouldHit {
+				room.PlayerHit(botID)
+			} else {
+				room.PlayerStand(botID)
+			}
+
+			// 检查游戏是否结束
+			if room.CheckGameEnd() {
+				rm.handleGameEnd(room)
+				return
+			}
+
+			// 广播更新
+			rm.sendPlayersList(room)
+
+			time.Sleep(1000 * time.Millisecond) // 模拟思考时间
+		}
+	}()
+}
+
 // handleGameEnd 处理游戏结束
 func (rm *RoomManager) handleGameEnd(room *Room) {
 	// 计算结果
 	results := make([]map[string]interface{}, 0)
 	maxScore := 0
-	winnerID := ""
 
 	// 找出最高分（不超过21）
 	for _, player := range room.Players {
 		if player.Status != StatusBust && player.HandValue > maxScore {
 			maxScore = player.HandValue
-			winnerID = player.ID
 		}
 	}
 
-	// 生成结果
+	// 生成结果：所有达到最高分的玩家都是赢家（平局）
 	for _, player := range room.Players {
+		isWinner := player.Status != StatusBust && player.HandValue == maxScore && maxScore > 0
 		result := map[string]interface{}{
-			"playerId":  player.ID,
-			"nickname":  player.Nickname,
-			"score":     player.HandValue,
-			"status":    player.GetStatusString(),
-			"isWinner":  (player.ID == winnerID),
+			"playerId": player.ID,
+			"nickname": player.Nickname,
+			"score":    player.HandValue,
+			"status":   player.GetStatusString(),
+			"isWinner": isWinner,
 		}
 		results = append(results, result)
 	}
@@ -546,18 +708,37 @@ func (rm *RoomManager) handleGameEnd(room *Room) {
 			"results": results,
 		}),
 	})
+
+	// 广播公开所有牌的玩家列表
+	rm.sendPlayersList(room)
 }
 
-// broadcastPlayers 广播玩家列表
-func (rm *RoomManager) broadcastPlayers(room *Room, excludeID string) {
-	players := room.GetPlayersList(excludeID)
+// sendPlayersList 给房间内的所有玩家发送量身定制的玩家列表（隐藏其他玩家的手牌）
+func (rm *RoomManager) sendPlayersList(room *Room) {
+	room.Lock.RLock()
+	defer room.Lock.RUnlock()
 
-	room.Broadcast(Message{
-		Type: TypePlayers,
-		Data: toJSON(map[string]interface{}{
-			"players": players,
-		}),
-	})
+	for _, player := range room.Players {
+		if player.Conn != nil {
+		playersData := make([]map[string]interface{}, 0)
+			for _, id := range room.PlayerIDs {
+				if p, exists := room.Players[id]; exists {
+					isOtherDuringGame := (p.ID != player.ID) && (room.Status != GameEnded)
+					// 仅在不是当前接收者且游戏未结束时隐藏卡牌和真实状态
+					hideCards := isOtherDuringGame
+					maskStatus := isOtherDuringGame
+					playersData = append(playersData, p.ToMap(hideCards, maskStatus))
+				}
+			}
+
+			player.Conn.Send(Message{
+				Type: TypePlayers,
+				Data: toJSON(map[string]interface{}{
+					"players": playersData,
+				}),
+			})
+		}
+	}
 }
 
 // generateRoomID 生成房间ID
