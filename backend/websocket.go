@@ -24,26 +24,26 @@ var upgrader = websocket.Upgrader{
 type MessageType string
 
 const (
-	TypeConnect    MessageType = "connect"
-	TypeJoin       MessageType = "join"
-	TypeLeave      MessageType = "leave"
-	TypeStart      MessageType = "start"
-	TypeHit        MessageType = "hit"
-	TypeStand      MessageType = "stand"
-	TypeChat       MessageType = "chat"
-	TypeUpdate     MessageType = "update"
-	TypeError      MessageType = "error"
-	TypeRoomInfo   MessageType = "roomInfo"
-	TypePlayers    MessageType = "players"
-	TypeGameEnd    MessageType = "gameEnd"
-	TypeAddBot     MessageType = "addBot"
+	TypeConnect  MessageType = "connect"
+	TypeJoin     MessageType = "join"
+	TypeLeave    MessageType = "leave"
+	TypeStart    MessageType = "start"
+	TypeHit      MessageType = "hit"
+	TypeStand    MessageType = "stand"
+	TypeChat     MessageType = "chat"
+	TypeUpdate   MessageType = "update"
+	TypeError    MessageType = "error"
+	TypeRoomInfo MessageType = "roomInfo"
+	TypePlayers  MessageType = "players"
+	TypeGameEnd  MessageType = "gameEnd"
+	TypeAddBot   MessageType = "addBot"
 )
 
 // Message WebSocket消息
 type Message struct {
-	Type    MessageType      `json:"type"`
-	Data    json.RawMessage   `json:"data,omitempty"`
-	Error   string           `json:"error,omitempty"`
+	Type  MessageType     `json:"type"`
+	Data  json.RawMessage `json:"data,omitempty"`
+	Error string          `json:"error,omitempty"`
 }
 
 // WebSocketConn WebSocket连接
@@ -178,7 +178,7 @@ func (rm *RoomManager) GetRoom(roomID string) *Room {
 }
 
 // JoinRoom 加入房间
-func (rm *RoomManager) JoinRoom(roomID, playerID, nickname string) (*Room, error) {
+func (rm *RoomManager) JoinRoom(roomID, playerID, nickname, accountName string) (*Room, error) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
@@ -188,6 +188,8 @@ func (rm *RoomManager) JoinRoom(roomID, playerID, nickname string) (*Room, error
 	}
 
 	player := NewPlayer(playerID, nickname)
+	player.AccountName = accountName
+	player.Score = accountStore.GetScore(accountName)
 	if !room.AddPlayer(player) {
 		return nil, fmt.Errorf("无法加入房间（玩家已存在或房间已满）")
 	}
@@ -315,8 +317,9 @@ func (rm *RoomManager) handleMessage(wsConn *WebSocketConn, msg Message) {
 // handleConnect 处理连接消息
 func (rm *RoomManager) handleConnect(wsConn *WebSocketConn, msg Message) {
 	var data struct {
-		PlayerID string `json:"playerId"`
-		Nickname string `json:"nickname"`
+		PlayerID    string `json:"playerId"`
+		Nickname    string `json:"nickname"`
+		AccountName string `json:"accountName"`
 	}
 
 	if err := json.Unmarshal(msg.Data, &data); err != nil {
@@ -330,19 +333,24 @@ func (rm *RoomManager) handleConnect(wsConn *WebSocketConn, msg Message) {
 	player := rm.GetPlayer(data.PlayerID)
 	if player == nil {
 		player = NewPlayer(data.PlayerID, data.Nickname)
+		player.AccountName = data.AccountName
+		player.Score = accountStore.GetScore(data.AccountName)
 		rm.mu.Lock()
 		rm.players[data.PlayerID] = player
 		rm.mu.Unlock()
 	} else {
 		player.Nickname = data.Nickname
+		player.AccountName = data.AccountName
+		player.Score = accountStore.GetScore(data.AccountName)
 		player.Conn = wsConn
 	}
 
 	wsConn.Send(Message{
 		Type: TypeConnect,
 		Data: toJSON(map[string]string{
-			"playerId": player.ID,
-			"nickname": player.Nickname,
+			"playerId":    player.ID,
+			"nickname":    player.Nickname,
+			"accountName": player.AccountName,
 		}),
 	})
 }
@@ -350,9 +358,10 @@ func (rm *RoomManager) handleConnect(wsConn *WebSocketConn, msg Message) {
 // handleJoin 处理加入房间
 func (rm *RoomManager) handleJoin(wsConn *WebSocketConn, msg Message) {
 	var data struct {
-		RoomID   string `json:"roomId"`
-		PlayerID string `json:"playerId"`
-		Nickname string `json:"nickname"`
+		RoomID      string `json:"roomId"`
+		PlayerID    string `json:"playerId"`
+		Nickname    string `json:"nickname"`
+		AccountName string `json:"accountName"`
 	}
 
 	if err := json.Unmarshal(msg.Data, &data); err != nil {
@@ -379,7 +388,9 @@ func (rm *RoomManager) handleJoin(wsConn *WebSocketConn, msg Message) {
 		// 玩家已存在，更新连接（处理刷新页面的情况）
 		existingPlayer.Conn = wsConn
 		existingPlayer.Nickname = data.Nickname
-		
+		existingPlayer.AccountName = data.AccountName
+		existingPlayer.Score = accountStore.GetScore(data.AccountName)
+
 		// 发送房间信息
 		wsConn.Send(Message{
 			Type: TypeRoomInfo,
@@ -396,7 +407,7 @@ func (rm *RoomManager) handleJoin(wsConn *WebSocketConn, msg Message) {
 	}
 
 	// 玩家不存在，尝试加入房间
-	room, err := rm.JoinRoom(data.RoomID, data.PlayerID, data.Nickname)
+	room, err := rm.JoinRoom(data.RoomID, data.PlayerID, data.Nickname, data.AccountName)
 	if err != nil {
 		wsConn.Send(Message{
 			Type:  TypeError,
@@ -690,12 +701,19 @@ func (rm *RoomManager) handleGameEnd(room *Room) {
 	// 生成结果：所有达到最高分的玩家都是赢家（平局）
 	for _, player := range room.Players {
 		isWinner := player.Status != StatusBust && player.HandValue == maxScore && maxScore > 0
+		totalScore := accountStore.GetScore(player.AccountName)
+		if isWinner && !player.IsBot && player.AccountName != "" {
+			totalScore = accountStore.AddScore(player.AccountName, 1)
+			player.Score = totalScore
+		}
 		result := map[string]interface{}{
-			"playerId": player.ID,
-			"nickname": player.Nickname,
-			"score":    player.HandValue,
-			"status":   player.GetStatusString(),
-			"isWinner": isWinner,
+			"playerId":    player.ID,
+			"nickname":    player.Nickname,
+			"accountName": player.AccountName,
+			"score":       player.HandValue,
+			"totalScore":  totalScore,
+			"status":      player.GetStatusString(),
+			"isWinner":    isWinner,
 		}
 		results = append(results, result)
 	}
@@ -720,7 +738,7 @@ func (rm *RoomManager) sendPlayersList(room *Room) {
 
 	for _, player := range room.Players {
 		if player.Conn != nil {
-		playersData := make([]map[string]interface{}, 0)
+			playersData := make([]map[string]interface{}, 0)
 			for _, id := range room.PlayerIDs {
 				if p, exists := room.Players[id]; exists {
 					isOtherDuringGame := (p.ID != player.ID) && (room.Status != GameEnded)

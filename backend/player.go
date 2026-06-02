@@ -14,26 +14,30 @@ const (
 
 // Player 玩家
 type Player struct {
-	ID         string        `json:"id"`
-	Nickname   string        `json:"nickname"`
-	Cards      []Card        `json:"cards"`
-	Status     PlayerStatus  `json:"status"`
-	HandValue  int           `json:"handValue"`
-	RoomID     string        `json:"roomId"`
-	IsBot      bool          `json:"isBot"`
-	Conn       *WebSocketConn `json:"-"` // WebSocket连接
-	LastActive time.Time     `json:"lastActive"`
+	ID          string         `json:"id"`
+	Nickname    string         `json:"nickname"`
+	AccountName string         `json:"accountName"`
+	Score       int            `json:"score"`
+	Cards       []Card         `json:"cards"`
+	Status      PlayerStatus   `json:"status"`
+	HandValue   int            `json:"handValue"`
+	RoomID      string         `json:"roomId"`
+	IsBot       bool           `json:"isBot"`
+	Conn        *WebSocketConn `json:"-"` // WebSocket连接
+	LastActive  time.Time      `json:"lastActive"`
 }
 
 // NewPlayer 创建新玩家
 func NewPlayer(id, nickname string) *Player {
 	return &Player{
-		ID:         id,
-		Nickname:   nickname,
-		Cards:      make([]Card, 0),
-		Status:     StatusWaiting,
-		HandValue:  0,
-		LastActive: time.Now(),
+		ID:          id,
+		Nickname:    nickname,
+		AccountName: "",
+		Score:       0,
+		Cards:       make([]Card, 0),
+		Status:      StatusWaiting,
+		HandValue:   0,
+		LastActive:  time.Now(),
 	}
 }
 
@@ -132,6 +136,8 @@ func (p *Player) ToMap(hideCards bool, maskStatus bool) map[string]interface{} {
 	return map[string]interface{}{
 		"id":          p.ID,
 		"nickname":    p.Nickname,
+		"accountName": p.AccountName,
+		"score":       accountStore.GetScore(p.AccountName),
 		"cards":       cards,
 		"cardCount":   len(p.Cards),
 		"handValue":   handValue,

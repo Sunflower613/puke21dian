@@ -12,15 +12,30 @@ import (
 )
 
 var roomManager *RoomManager
+var accountStore *AccountStore
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 	roomManager = NewRoomManager()
+	accountStore = NewAccountStore("accounts.json")
 }
 
 func main() {
 	// 自动检测静态文件目录（优先根据可执行文件相对路径向上查找，避免 CWD 目录不正确导致的文件错乱）
 	staticDir := "../../" // 默认退路
+	if cwd, err := os.Getwd(); err == nil {
+		candidates := []string{
+			cwd,
+			filepath.Join(cwd, ".."),
+			filepath.Join(cwd, "../.."),
+		}
+		for _, c := range candidates {
+			if _, err := os.Stat(filepath.Join(c, "index.html")); err == nil {
+				staticDir = c
+				break
+			}
+		}
+	}
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
 		candidates := []string{
@@ -44,6 +59,8 @@ func main() {
 	fs := http.FileServer(http.Dir(staticDir))
 
 	// 创建房间API
+	http.HandleFunc("/api/auth/login", handleLogin)
+	http.HandleFunc("/api/leaderboard", handleLeaderboard)
 	http.HandleFunc("/api/room/create", handleCreateRoom)
 	http.HandleFunc("/api/room/", handleRoomAPI)
 
@@ -90,6 +107,51 @@ func main() {
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatalf("服务器启动失败: %v", err)
 	}
+}
+
+// handleLogin 处理简单名称密码登录；新名称会自动注册
+func handleLogin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var data struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "无效的数据格式"})
+		return
+	}
+
+	account, created, err := accountStore.Login(data.Username, data.Password)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"username": account.Username,
+		"score":    account.Score,
+		"created":  created,
+	})
+}
+
+// handleLeaderboard 返回积分排行榜
+func handleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"players": accountStore.Leaderboard(20),
+	})
 }
 
 // handleCreateRoom 处理创建房间

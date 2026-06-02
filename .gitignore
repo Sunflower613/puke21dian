@@ -3,3 +3,4 @@
 # 运行日志与本地测试产物
 backend/build/server.log
 backend/build/*.exe
+backend/accounts.json

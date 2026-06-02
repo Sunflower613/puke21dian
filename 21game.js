@@ -10,6 +10,8 @@ class BlackjackGame {
         this.maxReconnectAttempts = 5;
         this.isHost = false;
         this.gameStarted = false;
+        this.accountName = '';
+        this.accountScore = 0;
         this.prevCardCounts = {}; // 记录每个玩家上次的牌数，用于只给新牌加动画
 
         this.init();
@@ -33,6 +35,7 @@ class BlackjackGame {
         const urlParams = new URLSearchParams(window.location.search);
         this.roomId = urlParams.get('roomId');
         const urlNickname = urlParams.get('nickname');
+        const urlAccount = urlParams.get('account');
 
         if (!this.roomId) {
             alert('房间ID不存在');
@@ -44,9 +47,21 @@ class BlackjackGame {
         if (urlNickname) {
             this.nickname = decodeURIComponent(urlNickname);
         }
+        if (urlAccount) {
+            this.accountName = decodeURIComponent(urlAccount);
+            this.playerId = `account_${this.accountName}`;
+        } else {
+            const storedAccount = this.getStoredAccount();
+            if (storedAccount && !urlNickname) {
+                this.accountName = storedAccount.username;
+                this.nickname = storedAccount.username;
+                this.playerId = `account_${this.accountName}`;
+            }
+        }
 
         // 更新房间显示
         document.getElementById('room-id').textContent = this.roomId;
+        this.updateAccountScoreDisplay();
 
         // 绑定按钮事件
         document.getElementById('hit-button').addEventListener('click', () => this.hit());
@@ -70,6 +85,20 @@ class BlackjackGame {
         this.send({ type: 'addBot', data: { roomId: this.roomId, playerId: this.playerId } });
     }
 
+    getStoredAccount() {
+        try {
+            return JSON.parse(localStorage.getItem('blackjack_account'));
+        } catch (e) {
+            return null;
+        }
+    }
+
+    updateAccountScoreDisplay(score = this.accountScore) {
+        this.accountScore = score || 0;
+        const scoreEl = document.getElementById('account-score');
+        if (scoreEl) scoreEl.textContent = this.accountScore;
+    }
+
     connect() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -82,10 +111,10 @@ class BlackjackGame {
             this.updateStatus('已连接', 'green');
 
             // 发送连接消息
-            this.send({ type: 'connect', data: { playerId: this.playerId, nickname: this.nickname } });
+            this.send({ type: 'connect', data: { playerId: this.playerId, nickname: this.nickname, accountName: this.accountName } });
 
             // 加入房间
-            this.send({ type: 'join', data: { roomId: this.roomId, playerId: this.playerId, nickname: this.nickname } });
+            this.send({ type: 'join', data: { roomId: this.roomId, playerId: this.playerId, nickname: this.nickname, accountName: this.accountName } });
         };
 
         this.ws.onmessage = (event) => {
@@ -273,6 +302,7 @@ class BlackjackGame {
             const statusClass = this.getStatusClass(player.status);
             const nameLabel = isSelf ? '我' : player.nickname;
             const botBadge = player.isBot ? '<span class="badge badge-bot">🤖</span>' : '';
+            if (isSelf) this.updateAccountScoreDisplay(player.score);
 
             playerDiv.innerHTML = `
                 <div class="player-header">
@@ -282,6 +312,7 @@ class BlackjackGame {
                     </div>
                     <div class="player-meta">
                         <span class="card-count">${player.cardCount}张</span>
+                        <span class="account-score-badge">${player.score || 0}分</span>
                         <span class="score-badge">${displayValue}</span>
                         <span class="status ${statusClass}">${player.status}</span>
                     </div>
@@ -317,6 +348,7 @@ class BlackjackGame {
             const statusClass = this.getStatusClass(player.status);
             const nameLabel = isSelf ? '我' : player.nickname;
             const botBadge = player.isBot ? '<span class="badge badge-bot">🤖</span>' : '';
+            if (isSelf) this.updateAccountScoreDisplay(player.score);
 
             playerDiv.innerHTML = `
                 <div class="player-header">
@@ -326,6 +358,7 @@ class BlackjackGame {
                     </div>
                     <div class="player-meta">
                         <span class="card-count">${player.cardCount}张</span>
+                        <span class="account-score-badge">${player.score || 0}分</span>
                         <span class="score-badge">${displayValue}</span>
                         <span class="status ${statusClass}">${player.status}</span>
                     </div>
@@ -388,9 +421,18 @@ class BlackjackGame {
                     <span>${winnerIcon}${result.nickname}</span>
                     <span>
                         <span class="result-score" style="color: ${statusColor}">${result.score}分</span>
+                        <span style="color: var(--gold); font-size: 0.75rem; margin-left: 6px">总分 ${result.totalScore || 0}</span>
                         <span style="color: var(--text-muted); font-size: 0.75rem; margin-left: 6px">${result.status}</span>
                     </span>
                 </div>`;
+            if (result.accountName && result.accountName === this.accountName) {
+                this.updateAccountScoreDisplay(result.totalScore);
+                const storedAccount = this.getStoredAccount();
+                if (storedAccount) {
+                    storedAccount.score = result.totalScore || 0;
+                    localStorage.setItem('blackjack_account', JSON.stringify(storedAccount));
+                }
+            }
         });
 
         resultHtml += '</div>';

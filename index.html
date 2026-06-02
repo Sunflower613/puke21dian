@@ -11,7 +11,8 @@
     body {
       display: flex;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
+      flex-direction: column;
     }
 
     /* 背景装饰牌 */
@@ -28,8 +29,8 @@
       width: 90px;
       height: 127px;
       border-radius: 10px;
-      background: linear-gradient(135deg, rgba(22, 34, 48, 0.6), rgba(30, 45, 65, 0.4));
-      border: 1px solid rgba(255, 255, 255, 0.04);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(226, 232, 240, 0.65));
+      border: 1px solid rgba(15, 23, 42, 0.08);
       opacity: 0.15;
     }
 
@@ -66,8 +67,16 @@
       width: 100%;
       max-width: 400px;
       padding: 40px 32px;
+      margin: 56px 20px 32px;
       text-align: center;
+      position: relative;
+      z-index: 1;
+      background: rgba(255, 255, 255, 0.94);
       animation: fadeSlideUp 0.6s ease;
+    }
+
+    [data-theme="dark"] .lobby-card {
+      background: rgba(22, 34, 48, 0.88);
     }
 
     /* Logo 区 */
@@ -113,6 +122,64 @@
     .form-group {
       text-align: left;
       margin-bottom: 20px;
+    }
+
+    .account-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      margin: -4px 0 20px;
+      background: rgba(183, 121, 31, 0.08);
+      border: 1px solid rgba(183, 121, 31, 0.18);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+
+    .account-card strong {
+      color: var(--gold);
+      font-size: 1rem;
+    }
+
+    .leaderboard {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      text-align: left;
+    }
+
+    .leaderboard h3 {
+      margin-bottom: 10px;
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+
+    .leaderboard-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+    }
+
+    .leaderboard-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.04);
+    }
+
+    [data-theme="dark"] .bg-card-deco {
+      background: linear-gradient(135deg, rgba(22, 34, 48, 0.6), rgba(30, 45, 65, 0.4));
+      border-color: rgba(255, 255, 255, 0.04);
+    }
+
+    [data-theme="dark"] .leaderboard-item {
+      background: rgba(255, 255, 255, 0.04);
     }
 
     .form-label {
@@ -187,10 +254,29 @@
     #join-modal .form-group {
       margin-top: 12px;
     }
+
+    #login-modal .modal-content {
+      text-align: left;
+    }
+
+    #login-modal .btn-block {
+      margin-top: 16px;
+    }
   </style>
 </head>
 
 <body>
+  <div class="app-topbar">
+    <div class="topbar-left">
+      <div class="topbar-brand">♠ 21点</div>
+      <div class="topbar-pill">积分 <strong id="account-score">0</strong></div>
+    </div>
+    <div class="topbar-right">
+      <button class="account-avatar-btn" id="account-avatar-btn" onclick="showLoginModal()" aria-label="账号登录" title="账号登录">👤</button>
+      <button class="theme-toggle" data-theme-toggle type="button">🌙</button>
+    </div>
+  </div>
+
   <!-- 背景装饰 -->
   <div class="bg-cards">
     <div class="bg-card-deco"></div>
@@ -214,14 +300,9 @@
       <p class="logo-subtitle">经典牌局对决 · 邀请好友开局</p>
     </div>
 
-    <!-- 昵称 -->
-    <div class="form-group">
-      <label class="form-label" for="nickname-input">玩家昵称</label>
-      <div class="input-with-icon">
-        <span class="input-icon">👤</span>
-        <input type="text" id="nickname-input" placeholder="输入您的昵称..." value="玩家" maxlength="12"
-          autocomplete="off" spellcheck="false">
-      </div>
+    <div class="leaderboard">
+      <h3>排行榜</h3>
+      <div class="leaderboard-list" id="leaderboard-list">暂无数据</div>
     </div>
 
     <!-- 按钮 -->
@@ -271,16 +352,156 @@
     </div>
   </div>
 
+  <!-- 登录弹窗 -->
+  <div class="modal-overlay hidden" id="login-modal" onclick="closeLoginModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <h3>账号登录</h3>
+      <div class="form-group">
+        <label class="form-label" for="nickname-input">账号名称</label>
+        <div class="input-with-icon">
+          <span class="input-icon">👤</span>
+          <input type="text" id="nickname-input" placeholder="输入账号名称..." maxlength="16"
+            autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password-input">密码</label>
+        <div class="input-with-icon">
+          <span class="input-icon">🔒</span>
+          <input type="password" id="password-input" placeholder="输入密码..." maxlength="32"
+            autocomplete="current-password">
+        </div>
+      </div>
+      <button class="btn-primary btn-block" id="login-btn" onclick="loginAccount()">登录 / 注册</button>
+    </div>
+  </div>
+
+  <script src="theme.js"></script>
   <script>
     // ========== 大厅逻辑 ==========
 
+    const ACCOUNT_KEY = 'blackjack_account';
+    const GUEST_KEY = 'blackjack_guest_name';
+    let currentAccount = null;
+
+    initThemeToggle();
+    loadStoredAccount();
+    loadLeaderboard();
+
+    function loadStoredAccount() {
+      try {
+        currentAccount = JSON.parse(localStorage.getItem(ACCOUNT_KEY));
+      } catch (e) {
+        currentAccount = null;
+      }
+      if (currentAccount && currentAccount.username) {
+        document.getElementById('nickname-input').value = currentAccount.username;
+      } else {
+        currentAccount = createGuestAccount();
+      }
+      updateAccountUI();
+    }
+
+    function createGuestAccount() {
+      let guestName = sessionStorage.getItem(GUEST_KEY);
+      if (!guestName) {
+        guestName = '游客' + Math.floor(1000 + Math.random() * 9000);
+        sessionStorage.setItem(GUEST_KEY, guestName);
+      }
+      return { username: guestName, score: 0, guest: true };
+    }
+
+    function updateAccountUI() {
+      const isGuest = !currentAccount || currentAccount.guest;
+      document.getElementById('account-score').textContent = currentAccount ? currentAccount.score : 0;
+      const avatarBtn = document.getElementById('account-avatar-btn');
+      avatarBtn.textContent = isGuest ? '👤' : currentAccount.username.slice(0, 1).toUpperCase();
+      avatarBtn.setAttribute('aria-label', isGuest ? '账号登录' : `账号：${currentAccount.username}`);
+      avatarBtn.title = isGuest ? '账号登录' : `账号：${currentAccount.username}`;
+    }
+
+    async function loginAccount() {
+      const username = document.getElementById('nickname-input').value.trim();
+      const password = document.getElementById('password-input').value;
+      if (!username || !password) {
+        showToast('请输入账号名称和密码');
+        return null;
+      }
+
+      const btn = document.getElementById('login-btn');
+      btn.disabled = true;
+      btn.textContent = '登录中...';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          showToast(data.error);
+          return null;
+        }
+        currentAccount = { username: data.username, score: data.score };
+        localStorage.setItem(ACCOUNT_KEY, JSON.stringify(currentAccount));
+        updateAccountUI();
+        loadLeaderboard();
+        hideLoginModal();
+        showToast(data.created ? '注册并登录成功' : '登录成功');
+        return currentAccount;
+      } catch (e) {
+        showToast('网络错误，请检查服务器是否启动');
+        console.error(e);
+        return null;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '登录 / 注册';
+      }
+    }
+
+    async function ensureAccount() {
+      return currentAccount || createGuestAccount();
+    }
+
+    function showLoginModal() {
+      document.getElementById('login-modal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('nickname-input').focus(), 100);
+    }
+
+    function hideLoginModal() {
+      document.getElementById('login-modal').classList.add('hidden');
+    }
+
+    function closeLoginModal(e) {
+      if (e.target === e.currentTarget) hideLoginModal();
+    }
+
+    async function loadLeaderboard() {
+      try {
+        const res = await fetch('/api/leaderboard');
+        const data = await res.json();
+        const list = document.getElementById('leaderboard-list');
+        const players = data.players || [];
+        list.innerHTML = players.length ? players.map((player, index) => `
+          <div class="leaderboard-item">
+            <span>${index + 1}. ${player.username}</span>
+            <strong>${player.score} 分</strong>
+          </div>
+        `).join('') : '暂无数据';
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
     function getNickname() {
-      const v = document.getElementById('nickname-input').value.trim();
-      return v || '玩家' + Math.floor(Math.random() * 1000);
+      return currentAccount ? currentAccount.username : document.getElementById('nickname-input').value.trim();
     }
 
     // 创建房间
     async function createRoom() {
+      const account = await ensureAccount();
+      if (!account) return;
+
       const btn = document.getElementById('create-room-btn');
       btn.disabled = true;
       btn.innerHTML = '<span class="pulse-dot"></span> 创建中...';
@@ -290,7 +511,8 @@
         const data = await res.json();
         if (data.roomId) {
           const nickname = encodeURIComponent(getNickname());
-          window.location.href = `21game.html?roomId=${data.roomId}&nickname=${nickname}`;
+          const accountQuery = account.guest ? '' : `&account=${encodeURIComponent(account.username)}`;
+          window.location.href = `21game.html?roomId=${data.roomId}&nickname=${nickname}${accountQuery}`;
         } else {
           showToast('创建失败，请重试');
         }
@@ -317,6 +539,9 @@
 
     // 加入房间
     async function joinRoom() {
+      const account = await ensureAccount();
+      if (!account) return;
+
       const roomId = document.getElementById('room-id-input').value.trim();
       if (!roomId) {
         showToast('请输入房间 ID');
@@ -343,7 +568,8 @@
         }
 
         const nickname = encodeURIComponent(getNickname());
-        window.location.href = `21game.html?roomId=${roomId}&nickname=${nickname}`;
+        const accountQuery = account.guest ? '' : `&account=${encodeURIComponent(account.username)}`;
+        window.location.href = `21game.html?roomId=${roomId}&nickname=${nickname}${accountQuery}`;
       } catch (e) {
         showToast('网络错误，请检查服务器是否启动');
         console.error(e);
@@ -377,7 +603,11 @@
 
     // 回车创建房间
     document.getElementById('nickname-input').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') createRoom();
+      if (e.key === 'Enter') loginAccount();
+    });
+
+    document.getElementById('password-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') loginAccount();
     });
   </script>
 </body>
