@@ -1,1 +1,6 @@
 /扑克.jpg
+
+# 编译产物与运行日志
+backend/build/blackjack-linux-*
+backend/build/*.exe
+backend/build/server.log
